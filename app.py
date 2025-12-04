@@ -9,7 +9,7 @@ from datetime import datetime
 from groq import Groq
 
 MODEL_ID = "whisper-large-v3-turbo"
-SUMMARY_MODEL = "mixtral-8x7b-32768"  # 可换为你有权限的 Groq 文本模型
+SUMMARY_MODEL = "gemma2-9b-it"  # 可换为你有权限的 Groq 文本模型
 
 st.set_page_config(page_title="播客转文字", page_icon="🎧")
 st.title("🎧 播客转文字 (Groq 稳定版)")
@@ -187,3 +187,4 @@ st.write("---")
 url = st.text_input("请输入播客网页链接或音频直链")
 if st.button("开始转写") and url:
     process_audio(url)
+
