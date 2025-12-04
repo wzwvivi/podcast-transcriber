@@ -8,12 +8,13 @@ import gc
 from datetime import datetime
 from groq import Groq
 
-MODEL_ID = "whisper-large-v3-turbo"
-SUMMARY_MODEL = "llama-3.1-8b-instant"  # 可换为你有权限的 Groq 文本模型
+ASR_MODEL = "whisper-large-v3-turbo"     # 语音转文字
+SUMMARY_MODEL = "llama-3.1-8b-instant"   # 文本总结
 
 st.set_page_config(page_title="播客转文字", page_icon="🎧")
-st.title("🎧 播客转文字 (Groq 稳定版)")
-st.info("💡 串行流式处理 + 自动生成中文 Notion Markdown 摘要。")
+st.title("🎧 播客转文字 + Notion 摘要（Groq）")
+
+st.info("💡 串行流式转写，完成后自动用中文生成符合 Notion 结构的 Markdown。")
 
 api_key = os.environ.get("GROQ_API_KEY")
 if not api_key:
@@ -44,7 +45,7 @@ def transcribe_with_retry(client: Groq, chunk_file: str) -> str:
             with open(chunk_file, "rb") as f:
                 text = client.audio.transcriptions.create(
                     file=(chunk_file, f.read()),
-                    model=MODEL_ID,
+                    model=ASR_MODEL,
                     language="zh",
                     response_format="text",
                 )
@@ -54,17 +55,22 @@ def transcribe_with_retry(client: Groq, chunk_file: str) -> str:
     return "[该片段转写失败]"
 
 
-def summarize_to_markdown(client: Groq, transcript: str, source_url: str) -> str:
+def summarize_to_markdown(
+    client: Groq, transcript: str, source_url: str, custom_prompt: str
+) -> str:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     prompt = f"""
-你是一位资深的中文播客笔记助手，请用中文生成一份 Notion 适用的 Markdown。
-要求：
-1. 包含标题（可自拟）、基本信息（含原始链接 {source_url} 和整理时间 {timestamp}）。
-2. 输出一个“摘要”部分，列出 3~4 条要点，每条不超过 50 字。
-3. 输出“逐段正文”，按照逻辑段落概括内容（不需要严格按分钟）。
-4. 输出“灵感/待办”部分，列出 2~3 条行动项，用 `- [ ]` 形式。
-5. 语言保持简洁、专业、全部使用中文。
-以下是播客完整转写内容，请直接生成 Markdown：
+你必须用中文输出 Markdown，并且不管用户提示是什么，都要包含以下固定模块：
+1. 标题（可自拟）
+2. 基本信息（至少包含“原始链接：{source_url}”和“整理时间：{timestamp}”）
+3. 摘要（列出 3~4 条要点）
+4. 逐段正文（按逻辑段落概括）
+5. 灵感/待办（用 - [ ] 形式至少 2 条）
+
+用户附加提示如下：
+{custom_prompt}
+
+以下是播客的完整转写内容，请在满足固定模块的前提下生成 Markdown：
 {transcript}
 """
     response = client.chat.completions.create(
@@ -79,7 +85,7 @@ def summarize_to_markdown(client: Groq, transcript: str, source_url: str) -> str
     return response.choices[0].message.content.strip()
 
 
-def process_audio(input_url: str):
+def process_audio(input_url: str, custom_prompt: str):
     client = Groq(api_key=api_key)
 
     status_box = st.empty()
@@ -151,13 +157,11 @@ def process_audio(input_url: str):
         status_box.success("✅ 转写完成！")
 
         try:
-            markdown_output = summarize_to_markdown(client, full_text, input_url)
+            markdown_output = summarize_to_markdown(client, full_text, input_url, custom_prompt)
         except Exception as e:
-            markdown_output = (
-                f"# 自动摘要失败\n\n错误信息：{e}\n\n---\n{full_text}"
-            )
+            markdown_output = f"# 自动摘要失败\n\n错误信息：{e}\n\n---\n{full_text}"
 
-        st.text_area("Notion Markdown（自动生成，可复制到 Notion）", markdown_output, height=400)
+        st.text_area("Notion Markdown（自动生成，可复制）", markdown_output, height=400)
         st.download_button(
             "下载 Markdown 文件",
             data=markdown_output.encode("utf-8"),
@@ -185,8 +189,14 @@ def process_audio(input_url: str):
 
 st.write("---")
 url = st.text_input("请输入播客网页链接或音频直链")
+custom_prompt = st.text_area(
+    "自定义提示（可选，默认强调摘要+播客信息）",
+    value="请用中文生成结构化播客笔记，强调摘要、逐段要点和灵感/待办。",
+    height=120,
+)
+
 if st.button("开始转写") and url:
-    process_audio(url)
+    process_audio(url, custom_prompt)
 
 
 
